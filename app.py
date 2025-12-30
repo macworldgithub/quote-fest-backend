@@ -468,7 +468,7 @@ async def add_adhoc(
 
 
 @app.post("/update-line/{quote_id}")
-async def update_line(quote_id: str, index: int = Form(...), update: UpdateLine = Body(...)):
+async def update_line(quote_id: str, index: int, update: UpdateLine = Body(...)):
     quote = await quotes_collection.find_one({"_id": quote_id})
     if not quote or index >= len(quote["selected_lines"]):
         raise HTTPException(404)
@@ -607,4 +607,4 @@ async def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=8002, reload=True)
