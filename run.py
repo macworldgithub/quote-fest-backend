@@ -8,7 +8,7 @@ import io
 import json
 from typing import List, Dict, Optional
 import fitz  # PyMuPDF
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Body
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
@@ -25,13 +25,6 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
-# OCR & image helpers
-from PIL import Image
-try:
-    import pytesseract
-    OCR_AVAILABLE = True
-except Exception:  # pylint: disable=broad-except
-    OCR_AVAILABLE = False
 
 # ==================== SETUP ====================
 load_dotenv()
@@ -52,8 +45,6 @@ FROM_EMAIL = os.getenv("FROM_EMAIL")
 if not all([SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASS, FROM_EMAIL]):
     print("Warning: SMTP env vars not fully set; /send-email will fail.")
 
-TCS_PDF_PATH = os.getenv("TCS_PDF_PATH", "standard_tcs.pdf")
-
 # X.ai / XAI-compatible endpoint
 client = OpenAI(base_url="https://api.x.ai/v1", api_key=XAI_API_KEY)
 
@@ -65,14 +56,8 @@ app = FastAPI(title="QUOTEFAST PRO v3.0 (OCR + Grok)")
 
 TEMP_DIR = tempfile.gettempdir()
 
-@app.on_event("startup")
-async def startup_event():
-    # Test MongoDB connection
-    await mongo_client.admin.command('ping')
-    print("MongoDB connected successfully")
-
 # ==================== FLEXIBLE PROMPT (No Static Structure) ====================
-GROK_PROMPT = """You are an expert Australian telco bill analyst. Analyze the full uploaded bill (all pages). Extract all relevant customer details, current services, spend, and anything useful. Then, recommend 1-3 superior plans from our catalogue that beat the current bill (lower cost or better value). Use Gold bundles where possible (NBN $0 in bundle). Output ONLY valid JSON. Use whatever structure makes the most sense for this specific bill. Include at minimum: 
+GROK_PROMPT = """You are an expert Australian telco bill analyst. Analyze the full uploaded bill (all pages provided as images). Extract all relevant customer details, current services, spend, and anything useful. Then, recommend 1-3 superior plans from our catalogue that beat the current bill (lower cost or better value). Use Gold bundles where possible (NBN $0 in bundle). Output ONLY valid JSON. Use whatever structure makes the most sense for this specific bill. Include at minimum: 
 - customer info (type: Business or Residential, company (if Business), ABN/ACN (if Business), site_address, billing_address, main_contact_name, main_contact_number, main_contact_email, authorised_contact_name, authorised_contact_number, authorised_contact_email, secondary_contact_name, secondary_contact_number, secondary_contact_email, billing_contact_name, billing_contact_number, billing_contact_email, DIDs, etc.) 
 - current monthly spend (ex GST as well as inc GST if available) 
 - recommendations with name, description, new monthly spend, saving, and line items (sku, desc, qty, unit_ex, cadence) 
@@ -159,76 +144,26 @@ class QuoteResponse(BaseModel):
     status: str = "Draft"  # Added for metadata
 
 
-class UpdateLine(BaseModel):
-    sku: Optional[str] = None
-    desc: Optional[str] = None
-    qty: Optional[int] = None
-    unit_ex: Optional[float] = None
-    cadence: Optional[str] = None
-    haas_term: Optional[int] = None
-
-
-# ==================== OCR & TEXT EXTRACTION ====================
-def ocr_image_bytes(img_bytes: bytes, lang: str = "eng") -> str:
-    if not OCR_AVAILABLE:
-        return ""
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    try:
-        return pytesseract.image_to_string(img, lang=lang)
-    except Exception:  # fallback to basic config if lang not available
-        return pytesseract.image_to_string(img)
-
-
-def pdf_extract_text(pdf_bytes: bytes, max_pages: Optional[int] = None, ocr_lang: str = "eng") -> str:
-    """Extract text from a PDF: native text first, fallback to OCR."""
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    texts: List[str] = []
-    page_count = len(doc)
-    to_process = range(page_count) if max_pages is None else range(min(page_count, max_pages))
-    for i in to_process:
-        page = doc[i]
-        page_text = page.get_text("text").strip()
-        if page_text:
-            texts.append(f"--- PAGE {i+1} ---\n{page_text}")
-            continue
-        # Fallback to OCR
-        try:
-            pix = page.get_pixmap(dpi=300)
+# ==================== IMAGE EXTRACTION ====================
+def get_bill_images(contents: bytes, file_type: str, max_pages: Optional[int] = None) -> List[str]:
+    """Extract base64-encoded PNG images from PDF or single image."""
+    images: List[str] = []
+    if file_type == "application/pdf":
+        doc = fitz.open(stream=contents, filetype="pdf")
+        page_count = len(doc)
+        to_process = range(page_count) if max_pages is None else range(min(page_count, max_pages))
+        for i in to_process:
+            page = doc[i]
+            pix = page.get_pixmap(dpi=200)  # Lower DPI for speed; adjust as needed
             img_bytes = pix.tobytes("png")
-            if OCR_AVAILABLE:
-                ocr_result = ocr_image_bytes(img_bytes, lang=ocr_lang).strip()
-                texts.append(f"--- PAGE {i+1} (OCR) ---\n{ocr_result}")
-            else:
-                texts.append(f"--- PAGE {i+1} ---\n[NO TEXT EXTRACTED; OCR NOT AVAILABLE]")
-        except Exception as e:
-            texts.append(f"--- PAGE {i+1} ---\n[ERROR RENDERING PAGE: {str(e)}]")
-    doc.close()
-    return "\n\n".join(texts)
-
-
-def image_bytes_to_text(img_bytes: bytes, ocr_lang: str = "eng") -> str:
-    """OCR for uploaded images (jpeg/png/webp)."""
-    if OCR_AVAILABLE:
-        return ocr_image_bytes(img_bytes, lang=ocr_lang)
-    return ""
-
-
-# ==================== TEXT CHUNKING ====================
-def chunk_text(text: str, max_chars: int = 20000) -> List[str]:
-    """Simple character-based chunking."""
-    if len(text) <= max_chars:
-        return [text]
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = min(len(text), start + max_chars)
-        if end < len(text):
-            nl = text.rfind("\n", start, end)
-            if nl > start:
-                end = nl + 1  # include newline
-        chunks.append(text[start:end])
-        start = end
-    return chunks
+            base64_img = base64.b64encode(img_bytes).decode('utf-8')
+            images.append(base64_img)
+        doc.close()
+    else:
+        # Single image
+        base64_img = base64.b64encode(contents).decode('utf-8')
+        images.append(base64_img)
+    return images
 
 
 # ==================== PDF GENERATOR (Flexible) ====================
@@ -323,34 +258,27 @@ async def analyze_bill(
     file: UploadFile = File(...),
     customer_type: str = Form("Business", description="Business or Residential"),
     max_pages: Optional[int] = Query(None, description="Limit how many pages to process (for very large PDFs)"),
-    ocr_lang: str = Query("eng", description="Tesseract OCR language (e.g. 'eng')"),
 ):
     if file.content_type not in ["application/pdf", "image/jpeg", "image/png", "image/webp"]:
         raise HTTPException(400, "Only PDF or images allowed")
     contents = await file.read()
-    # Extract text
-    if file.content_type == "application/pdf":
-        full_text = pdf_extract_text(contents, max_pages=max_pages, ocr_lang=ocr_lang)
-    else:
-        full_text = image_bytes_to_text(contents, ocr_lang=ocr_lang)
-    if not full_text.strip():
-        raise HTTPException(500, "Failed to extract any text from the uploaded file. Ensure Tesseract is installed for scanned PDFs.")
-    # Chunk text
-    chunks = chunk_text(full_text, max_chars=18000)
+    # Extract images as base64
+    images = get_bill_images(contents, file.content_type, max_pages=max_pages)
+    if not images:
+        raise HTTPException(500, "Failed to extract any images from the uploaded file.")
     # Build messages
     messages = [{"role": "system", "content": GROK_PROMPT}]
-    messages.append({"role": "user", "content": f"Customer type: {customer_type}"})
-    for idx, chunk in enumerate(chunks):
-        messages.append(
-            {
-                "role": "user",
-                "content": f"Bill text chunk {idx+1}/{len(chunks)}:\n\n{chunk}",
-            }
-        )
+    user_content = [
+        {"type": "text", "text": f"Customer type: {customer_type}\n\nAnalyze the following bill images (each image is a page or the bill photo):"},
+    ] + [
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}}
+        for img in images
+    ]
+    messages.append({"role": "user", "content": user_content})
     messages.append(
         {
             "role": "user",
-            "content": "Now, using all chunks above, produce a single valid JSON object that contains the extracted customer details, current monthly spend (ex GST), and 1-3 recommended solutions as described in the system prompt. DO NOT output anything except valid JSON.",
+            "content": "Now, using all the bill images above, produce a single valid JSON object that contains the extracted customer details, current monthly spend (ex GST), and 1-3 recommended solutions as described in the system prompt. DO NOT output anything except valid JSON.",
         }
     )
     try:
@@ -360,6 +288,7 @@ async def analyze_bill(
             response_format={"type": "json_object"},
             max_tokens=3000,
         )
+        print(response)
         model_content = response.choices[0].message.content
         raw_output = json.loads(model_content)
         if not isinstance(raw_output, dict):
@@ -410,10 +339,6 @@ async def analyze_bill(
         "status": "Draft",  # Added
     }
     await quotes_collection.insert_one(quote)
-    # Verify insertion
-    inserted_quote = await quotes_collection.find_one({"_id": quote_id})
-    if not inserted_quote:
-        raise HTTPException(500, "Failed to insert quote into database")
     return QuoteResponse(id=quote_id, **{k: quote[k] for k in quote if k != "_id"})
 
 
@@ -461,35 +386,6 @@ async def add_adhoc(
     if result.modified_count == 0:
         raise HTTPException(404)
     quote = await quotes_collection.find_one({"_id": quote_id})
-    new_monthly = sum(l["qty"] * l["unit_ex"] for l in quote["selected_lines"] if l["cadence"] == "monthly")
-    saving = quote["current_spend_ex"] - new_monthly
-    await quotes_collection.update_one({"_id": quote_id}, {"$set": {"new_monthly_ex": new_monthly, "monthly_saving_ex": saving}})
-    return QuoteResponse(id=quote_id, **{k: quote[k] for k in quote if k != "_id"})
-
-
-@app.post("/update-line/{quote_id}")
-async def update_line(quote_id: str, index: int = Form(...), update: UpdateLine = Body(...)):
-    quote = await quotes_collection.find_one({"_id": quote_id})
-    if not quote or index >= len(quote["selected_lines"]):
-        raise HTTPException(404)
-    line = quote["selected_lines"][index]
-    for k, v in update.dict(exclude_unset=True).items():
-        line[k] = v
-    new_monthly = sum(l["qty"] * l["unit_ex"] for l in quote["selected_lines"] if l["cadence"] == "monthly")
-    saving = quote["current_spend_ex"] - new_monthly
-    await quotes_collection.update_one({"_id": quote_id}, {"$set": {"selected_lines": quote["selected_lines"], "new_monthly_ex": new_monthly, "monthly_saving_ex": saving}})
-    return QuoteResponse(id=quote_id, **{k: quote[k] for k in quote if k != "_id"})
-
-
-@app.post("/remove-line/{quote_id}")
-async def remove_line(quote_id: str, index: int = Form(...)):
-    quote = await quotes_collection.find_one({"_id": quote_id})
-    if not quote or index >= len(quote["selected_lines"]):
-        raise HTTPException(404)
-    del quote["selected_lines"][index]
-    new_monthly = sum(l["qty"] * l["unit_ex"] for l in quote["selected_lines"] if l["cadence"] == "monthly")
-    saving = quote["current_spend_ex"] - new_monthly
-    await quotes_collection.update_one({"_id": quote_id}, {"$set": {"selected_lines": quote["selected_lines"], "new_monthly_ex": new_monthly, "monthly_saving_ex": saving}})
     return QuoteResponse(id=quote_id, **{k: quote[k] for k in quote if k != "_id"})
 
 
@@ -585,11 +481,12 @@ async def send_email(quote_id: str, to_email: str = Form(...)):
         attach = MIMEApplication(f.read(), _subtype="pdf")
         attach.add_header("Content-Disposition", "attachment", filename=f"Quote_{quote_id[:8].upper()}.pdf")
         msg.attach(attach)
-    if os.path.exists(TCS_PDF_PATH):
-        with open(TCS_PDF_PATH, "rb") as f:
-            attach = MIMEApplication(f.read(), _subtype="pdf")
-            attach.add_header("Content-Disposition", "attachment", filename="Standard_TCs.pdf")
-            msg.attach(attach)
+    # TODO: Attach T&Cs if file exists, e.g., TCS_PDF_PATH = "standard_tcs.pdf"
+    # if os.path.exists(TCS_PDF_PATH):
+    #     with open(TCS_PDF_PATH, "rb") as f:
+    #         attach = MIMEApplication(f.read(), _subtype="pdf")
+    #         attach.add_header("Content-Disposition", "attachment", filename="Standard_TCs.pdf")
+    #         msg.attach(attach)
     try:
         with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
             server.starttls()
@@ -607,4 +504,4 @@ async def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("run:app", host="0.0.0.0", port=8001, reload=True)
