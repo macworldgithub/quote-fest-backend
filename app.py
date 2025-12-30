@@ -10,6 +10,8 @@ from typing import List, Dict, Optional
 import fitz  # PyMuPDF
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Body
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+
 from pydantic import BaseModel
 import uvicorn
 # If using the official OpenAI library with an XAI base_url:
@@ -62,6 +64,13 @@ db = mongo_client["quotefast_db"]
 quotes_collection = db["quotes"]
 
 app = FastAPI(title="QUOTEFAST PRO v3.0 (OCR + Grok)")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],          # Allow ALL origins
+    allow_credentials=True,
+    allow_methods=["*"],          # Allow all HTTP methods
+    allow_headers=["*"],          # Allow all headers
+)
 
 TEMP_DIR = tempfile.gettempdir()
 
@@ -607,4 +616,4 @@ async def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8002, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=7001, reload=True)
