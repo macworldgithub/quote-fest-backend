@@ -34,7 +34,7 @@ try:
     OCR_AVAILABLE = True
 except Exception:  # pylint: disable=broad-except
     OCR_AVAILABLE = False
-
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 # ==================== SETUP ====================
 load_dotenv()
 XAI_API_KEY = os.getenv("XAI_API_KEY")
@@ -616,4 +616,4 @@ async def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=7001, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=7002, reload=True)
