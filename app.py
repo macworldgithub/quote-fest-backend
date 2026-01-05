@@ -1264,7 +1264,12 @@ async def update_status(quote_id: str, status: str = Form(...)):
         raise HTTPException(404)
     quote = await quotes_collection.find_one({"_id": quote_id})
     return QuoteResponse(id=quote_id, **{k: quote[k] for k in quote if k != "_id"})
-
+@app.delete("/quote/{quote_id}")
+async def delete_quote(quote_id: str):
+    result = await quotes_collection.delete_one({"_id": quote_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return {"message": "Quote deleted successfully"}
 @app.get("/pdf/{quote_id}")
 async def get_pdf(quote_id: str):
     quote = await quotes_collection.find_one({"_id": quote_id})
