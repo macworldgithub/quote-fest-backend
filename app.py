@@ -1257,7 +1257,9 @@ async def list_quotes():
 
 @app.post("/update-status/{quote_id}")
 async def update_status(quote_id: str, status: str = Form(...)):
+    print(quote_id, status)
     result = await quotes_collection.update_one({"_id": quote_id}, {"$set": {"status": status}})
+    print(result)
     if result.modified_count == 0:
         raise HTTPException(404)
     quote = await quotes_collection.find_one({"_id": quote_id})
