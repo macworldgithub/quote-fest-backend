@@ -650,7 +650,6 @@ from PIL import Image
 
 try:
     import pytesseract
-    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
     OCR_AVAILABLE = True
 except Exception:
     OCR_AVAILABLE = False
