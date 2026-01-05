@@ -1276,66 +1276,239 @@ async def get_pdf(quote_id: str):
         media_type="application/pdf",
         filename=f"Quote_{quote_id[:8].upper()}.pdf",
     )
+
+
 @app.get("/csv/{quote_id}")
 async def get_csv(quote_id: str):
     quote = await quotes_collection.find_one({"_id": quote_id})
     if not quote:
         raise HTTPException(404)
+
     path = os.path.join(TEMP_DIR, f"{quote_id}.csv")
+    
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["SKU", "Description", "Quantity", "Unit ex-GST", "GST", "Cadence", "HaaS term"])
-        for line in quote["selected_lines"]:
-            writer.writerow(
-                [
-                    line["sku"],
-                    line["desc"],
-                    line["qty"],
-                    line["unit_ex"],
-                    "10%",
-                    line["cadence"],
-                    line.get("haas_term", ""),
-                ]
-            )
-    return FileResponse(path, media_type="text/csv", filename=f"Halo_{quote_id[:8].upper()}.csv")
 
+        # === HEADER SECTION ===
+        writer.writerow(["QUOTEFAST PRO - FULL QUOTE EXPORT"])
+        writer.writerow(["Quote ID", quote_id[:8].upper()])
+        writer.writerow(["Generated on", datetime.datetime.now().strftime("%d %B %Y")])
+        writer.writerow([])
 
+        # === CUSTOMER DETAILS ===
+        writer.writerow(["CUSTOMER DETAILS"])
+        customer = quote.get("customer", {})
+
+        # Helper function to format address dict → clean multi-line string (using | as separator in CSV)
+        def format_address(addr):
+            if not addr:
+                return "N/A"
+            if isinstance(addr, str):
+                return addr.strip() or "N/A"
+            if isinstance(addr, dict):
+                parts = []
+                # Street line
+                street = addr.get("street") or addr.get("line1") or addr.get("address")
+                if street:
+                    parts.append(street.strip())
+                if addr.get("line2"):
+                    parts.append(addr.get("line2").strip())
+                
+                # Suburb/State/Postcode line
+                suburb = addr.get("suburb") or addr.get("city")
+                state = addr.get("state")
+                postcode = addr.get("postcode") or addr.get("zip")
+                
+                city_parts = [x.strip() for x in [suburb, state, postcode] if x]
+                if city_parts:
+                    parts.append(" ".join(city_parts))
+                
+                return " | ".join(parts) if parts else "N/A"
+            return "N/A"
+
+        writer.writerow(["Company", customer.get("company") or customer.get("company_name") or "N/A"])
+        writer.writerow(["ABN/ACN", customer.get("abn") or customer.get("acn") or "N/A"])
+        
+        # Properly formatted addresses
+        site_addr = customer.get("site_address") or customer.get("address")
+        billing_addr = customer.get("billing_address")
+        
+        writer.writerow(["Site Address", format_address(site_addr)])
+        writer.writerow(["Billing Address", format_address(billing_addr)])
+        
+        writer.writerow(["Main Contact", customer.get("main_contact_name") or customer.get("contact_name") or "N/A"])
+        writer.writerow(["Email", customer.get("main_contact_email") or customer.get("email") or "N/A"])
+        writer.writerow(["Phone", customer.get("main_contact_number") or customer.get("phone") or "N/A"])
+        writer.writerow(["Type", customer.get("type", "Business")])
+        writer.writerow([])
+
+        # === SAVINGS SUMMARY ===
+        writer.writerow(["SAVINGS SUMMARY (ex GST)"])
+        current = quote.get("current_spend_ex", 0.0)
+        proposed = quote.get("new_monthly_ex", 0.0)
+        saving = quote.get("monthly_saving_ex", 0.0)
+        
+        writer.writerow(["Current monthly spend", f"${current:.2f}"])
+        writer.writerow(["New monthly recurring", f"${proposed:.2f}"])
+        writer.writerow(["Monthly saving", f"${saving:.2f}"])
+        writer.writerow(["24-month saving", f"${saving * 24:.2f}"])
+        writer.writerow([])
+
+        # === QUOTE LINE ITEMS ===
+        writer.writerow(["QUOTE LINE ITEMS"])
+        writer.writerow(["SKU", "Description", "Quantity", "Unit Price (ex GST)", "Total (ex GST)", "Cadence", "HaaS Term"])
+
+        monthly_total = 0.0
+        once_off_total = 0.0
+
+        for line in quote.get("selected_lines", []):
+            qty = line.get("qty", 1)
+            unit_ex = line.get("unit_ex", 0.0)
+            total_ex = qty * unit_ex
+            sku = line.get("sku", "CUSTOM")
+            desc = line.get("desc", "Service")
+            cadence = line.get("cadence", "monthly").capitalize()
+            haas = line.get("haas_term", "")
+
+            writer.writerow([
+                sku,
+                desc,
+                qty,
+                f"${unit_ex:.2f}",
+                f"${total_ex:.2f}",
+                cadence,
+                haas or ""
+            ])
+
+            if line.get("cadence", "monthly").lower() == "monthly":
+                monthly_total += total_ex
+            else:
+                once_off_total += total_ex
+
+        writer.writerow([])
+        writer.writerow(["MONTHLY RECURRING TOTAL (ex GST)", f"${monthly_total:.2f}"])
+        writer.writerow(["ONCE-OFF TOTAL (ex GST)", f"${once_off_total:.2f}"])
+        writer.writerow([])
+        writer.writerow(["Quote Status", quote.get("status", "Draft")])
+        writer.writerow(["Valid for 30 days from issue date"])
+        writer.writerow(["Terms & Conditions apply • NBN availability subject to NBNCO assessment"])
+
+    return FileResponse(
+        path,
+        media_type="text/csv",
+        filename=f"QuoteFull_{quote_id[:8].upper()}.csv"
+    )
+# @app.post("/send-email/{quote_id}")
+# async def send_email(quote_id: str, to_email: str = Form(...)):
+#     quote = await quotes_collection.find_one({"_id": quote_id})
+#     if not quote:
+#         raise HTTPException(404)
+#     quote["id"] = quote_id  # For PDF
+#     # Generate email content with Grok
+#     messages = [{"role": "system", "content": EMAIL_PROMPT}]
+#     messages.append({"role": "user", "content": json.dumps(quote)})
+#     try:
+#         response = client.chat.completions.create(
+#             model="grok-3-latest",
+#             messages=messages,
+#             response_format={"type": "json_object"},
+#             max_tokens=1000,
+#         )
+#         email_content = json.loads(response.choices[0].message.content)
+#         subject = email_content["subject"]
+#         body = email_content["body"]
+#     except Exception as e:
+#         raise HTTPException(500, f"Grok email generation failed: {str(e)}") from e
+#     pdf_path = generate_pdf(quote)
+#     msg = MIMEMultipart()
+#     msg["From"] = FROM_EMAIL
+#     msg["To"] = to_email
+#     msg["Subject"] = subject
+#     msg.attach(MIMEText(body, "plain"))
+#     with open(pdf_path, "rb") as f:
+#         attach = MIMEApplication(f.read(), _subtype="pdf")
+#         attach.add_header("Content-Disposition", "attachment", filename=f"Quote_{quote_id[:8].upper()}.pdf")
+#         msg.attach(attach)
+#     if os.path.exists(TCS_PDF_PATH):
+#         with open(TCS_PDF_PATH, "rb") as f:
+#             attach = MIMEApplication(f.read(), _subtype="pdf")
+#             attach.add_header("Content-Disposition", "attachment", filename="Standard_TCs.pdf")
+#             msg.attach(attach)
+#     try:
+#         with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
+#             server.starttls()
+#             server.login(SMTP_USER, SMTP_PASS)
+#             server.send_message(msg)
+#     except Exception as e:
+#         raise HTTPException(500, f"Email sending failed: {str(e)}") from e
+#     await quotes_collection.update_one({"_id": quote_id}, {"$set": {"status": "Sent"}})
+#     return {"message": "Email sent successfully"}
 @app.post("/send-email/{quote_id}")
 async def send_email(quote_id: str, to_email: str = Form(...)):
     quote = await quotes_collection.find_one({"_id": quote_id})
     if not quote:
-        raise HTTPException(404)
-    quote["id"] = quote_id  # For PDF
-    # Generate email content with Grok
-    messages = [{"role": "system", "content": EMAIL_PROMPT}]
-    messages.append({"role": "user", "content": json.dumps(quote)})
-    try:
-        response = client.chat.completions.create(
-            model="grok-3-latest",
-            messages=messages,
-            response_format={"type": "json_object"},
-            max_tokens=1000,
-        )
-        email_content = json.loads(response.choices[0].message.content)
-        subject = email_content["subject"]
-        body = email_content["body"]
-    except Exception as e:
-        raise HTTPException(500, f"Grok email generation failed: {str(e)}") from e
+        raise HTTPException(404, "Quote not found")
+    # Prepare minimal customer info for personalization
+    cust = quote.get("raw_grok_output", {})
+    # print(cust)
+    customer = cust.customer_info
+    print(customer)
+    contact_name = (
+        customer.get("main_contact_name")
+        or customer.get("contact_name")
+        or customer.get("billing_contact_name")
+        or "Valued Customer"
+    )
+    company = customer.get("company") or customer.get("company_name") or ""
+
+    # Fixed short subject and body
+#     subject = f"Your Telco Quote #{quote_id[:8].upper()}"
+#     body = f"""Dear {contact_name},
+
+# Please find your personalised telco quote attached.
+
+# Feel free to reply to this email or give me a call if you have any questions.
+
+# """
+    body = f"""Please find your personalised telco quote attached.
+
+Feel free to reply to this email or give me a call if you have any questions.
+
+"""
+
+    # Generate PDF
+    quote["id"] = quote_id
     pdf_path = generate_pdf(quote)
+
+    # Build email
     msg = MIMEMultipart()
     msg["From"] = FROM_EMAIL
     msg["To"] = to_email
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
+
+    # Attach PDF
     with open(pdf_path, "rb") as f:
         attach = MIMEApplication(f.read(), _subtype="pdf")
-        attach.add_header("Content-Disposition", "attachment", filename=f"Quote_{quote_id[:8].upper()}.pdf")
+        attach.add_header(
+            "Content-Disposition",
+            "attachment",
+            filename=f"Quote_{quote_id[:8].upper()}.pdf"
+        )
         msg.attach(attach)
+
+    # Attach T&Cs if exists
     if os.path.exists(TCS_PDF_PATH):
         with open(TCS_PDF_PATH, "rb") as f:
             attach = MIMEApplication(f.read(), _subtype="pdf")
-            attach.add_header("Content-Disposition", "attachment", filename="Standard_TCs.pdf")
+            attach.add_header(
+                "Content-Disposition",
+                "attachment",
+                filename="Standard_TCs.pdf"
+            )
             msg.attach(attach)
+
+    # Send email
     try:
         with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
             server.starttls()
@@ -1343,9 +1516,14 @@ async def send_email(quote_id: str, to_email: str = Form(...)):
             server.send_message(msg)
     except Exception as e:
         raise HTTPException(500, f"Email sending failed: {str(e)}") from e
-    await quotes_collection.update_one({"_id": quote_id}, {"$set": {"status": "Sent"}})
-    return {"message": "Email sent successfully"}
 
+    # Update status
+    await quotes_collection.update_one(
+        {"_id": quote_id},
+        {"$set": {"status": "Sent"}}
+    )
+
+    return {"message": "Email sent successfully"}
 @app.get("/")
 async def root():
     return {"message": "QUOTEFAST PRO – Full Customer Details + Perfect PDF Match"}
