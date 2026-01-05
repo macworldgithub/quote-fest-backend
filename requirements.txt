@@ -4,6 +4,9 @@ python-multipart
 openai
 pydantic
 reportlab
-Jinja2
-python-dotenv
 pymupdf
+python-dotenv
+motor
+pytesseract
+Pillow
+Jinja2
