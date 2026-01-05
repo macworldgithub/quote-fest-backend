@@ -34,7 +34,7 @@ try:
     OCR_AVAILABLE = True
 except Exception:  # pylint: disable=broad-except
     OCR_AVAILABLE = False
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 # ==================== SETUP ====================
 load_dotenv()
 XAI_API_KEY = os.getenv("XAI_API_KEY")
