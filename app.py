@@ -865,7 +865,7 @@ def generate_pdf(quote: dict) -> str:
     story = []
 
     # Header
-    story.append(Paragraph("Telco Quote", styles["TitleBig"]))
+    story.append(Paragraph("Quote Fast", styles["TitleBig"]))
     customer_type = quote.get("customer", {}).get("type", "Business")
     story.append(Paragraph("Business Solution" if customer_type == "Business" else "Residential Solution", styles["Subtitle"]))
     story.append(Spacer(1, 10))
