@@ -1449,32 +1449,28 @@ async def send_email(quote_id: str, to_email: str = Form(...)):
     if not quote:
         raise HTTPException(404, "Quote not found")
     # Prepare minimal customer info for personalization
-    cust = quote.get("raw_grok_output", {})
+    # cust = quote.get("raw_grok_output", {})
     # print(cust)
-    customer = cust.customer_info
-    print(customer)
-    contact_name = (
-        customer.get("main_contact_name")
-        or customer.get("contact_name")
-        or customer.get("billing_contact_name")
-        or "Valued Customer"
-    )
-    company = customer.get("company") or customer.get("company_name") or ""
+    # print(cust)
+    # customer = cust.get("customer_info", {})
+    # print("abc",customer)
+    # contact_name = (
+    #     customer.get("main_contact_name")
+    #     or customer.get("contact_name")
+    #     or customer.get("billing_contact_name")
+    #     or "Valued Customer"
+    # )
+    # company = customer.get("company") or customer.get("company_name") or ""
 
     # Fixed short subject and body
-#     subject = f"Your Telco Quote #{quote_id[:8].upper()}"
-#     body = f"""Dear {contact_name},
-
-# Please find your personalised telco quote attached.
-
-# Feel free to reply to this email or give me a call if you have any questions.
-
-# """
-    body = f"""Please find your personalised telco quote attached.
+    subject = f"Your Telco Quote #{quote_id[:8].upper()}"
+    body = f"""Hi,
+Please find your personalised telco quote attached.
 
 Feel free to reply to this email or give me a call if you have any questions.
 
 """
+   
 
     # Generate PDF
     quote["id"] = quote_id
