@@ -932,7 +932,7 @@ from pydantic import BaseModel
 import uvicorn
 from openai import OpenAI
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import Image as RLImage, SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
@@ -1145,30 +1145,100 @@ def chunk_text(text: str, max_chars: int = 18000) -> List[str]:
 # ==================== PDF GENERATOR - Matches React Preview Exactly ====================
 def generate_pdf(quote: dict) -> str:
     pdf_path = os.path.join(TEMP_DIR, f"{quote['id']}.pdf")
+    
     doc = SimpleDocTemplate(
         pdf_path,
         pagesize=A4,
         leftMargin=20 * mm,
         rightMargin=20 * mm,
-        topMargin=25 * mm,
+        topMargin=20 * mm,
         bottomMargin=20 * mm
     )
+    
     styles = getSampleStyleSheet()
-
+    
     # Custom styles
-    styles.add(ParagraphStyle(name="TitleBig", fontSize=28, leading=34, alignment=TA_CENTER, spaceAfter=12, textColor=colors.HexColor("#111111")))
-    styles.add(ParagraphStyle(name="Subtitle", fontSize=13, textColor=colors.HexColor("#666666"), alignment=TA_CENTER, spaceAfter=30))
-    styles.add(ParagraphStyle(name="SectionHeader", fontSize=16, fontName="Helvetica-Bold", spaceBefore=25, spaceAfter=12, textColor=colors.HexColor("#111111")))
+    styles.add(ParagraphStyle(
+        name="TitleBig",
+        fontSize=26,
+        leading=32,
+        alignment=TA_CENTER,
+        spaceAfter=8,
+        textColor=colors.HexColor("#111111")
+    ))
+    styles.add(ParagraphStyle(
+        name="CompanyABN",
+        fontSize=13,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#444444"),
+        spaceAfter=18
+    ))
+    styles.add(ParagraphStyle(
+        name="Subtitle",
+        fontSize=13,
+        textColor=colors.HexColor("#666666"),
+        alignment=TA_CENTER,
+        spaceAfter=30
+    ))
+    styles.add(ParagraphStyle(
+        name="SectionHeader",
+        fontSize=16,
+        fontName="Helvetica-Bold",
+        spaceBefore=25,
+        spaceAfter=12,
+        textColor=colors.HexColor("#111111")
+    ))
+    styles.add(ParagraphStyle(
+        name="FooterSmall",
+        fontSize=9,
+        textColor=colors.HexColor("#777777"),
+        alignment=TA_CENTER,
+        spaceBefore=40
+    ))
 
     story = []
 
-    # Header
-    story.append(Paragraph("Quote Fast", styles["TitleBig"]))
-    customer_type = quote.get("customer", {}).get("type", "Business")
-    story.append(Paragraph("Business Solution" if customer_type == "Business" else "Residential Solution", styles["Subtitle"]))
-    story.append(Spacer(1, 10))
+    # ───────────────────────────────────────────────────────────────
+    #               COMPANY BRANDING HEADER
+    # ───────────────────────────────────────────────────────────────
 
-    # Customer Details
+    # === Logo (change path to your actual logo file) ===
+    # Recommended: transparent PNG, ~180–220 px wide
+    logo_path = "./belar.jpg"          # ← UPDATE THIS PATH
+    # Alternative examples:
+    # logo_path = "/app/assets/belar-logo.png"
+    # logo_path = os.path.join(os.path.dirname(__file__), "belar_logo.png")
+
+    if os.path.exists(logo_path):
+        try:
+            # Adjust width/height to fit your logo's aspect ratio
+            logo = RLImage(logo_path, width=80, height=60)
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 5))
+        except Exception as e:
+            # Silent fallback if image fails to load
+            pass
+
+    # Company name (prominent)
+    story.append(Paragraph("Quote Fast", styles["TitleBig"]))
+    
+    # ABN line
+    story.append(Paragraph("ABN 60 651 937 030", styles["CompanyABN"]))
+
+    story.append(Spacer(1, 3))
+
+    # Quote type subtitle
+    customer_type = quote.get("customer", {}).get("type", "Business")
+    subtitle_text = "Business Solution" if customer_type == "Business" else "Residential Solution"
+    story.append(Paragraph(subtitle_text, styles["Subtitle"]))
+    
+    story.append(Spacer(1, 3))
+
+    # ───────────────────────────────────────────────────────────────
+    #               CUSTOMER DETAILS
+    # ───────────────────────────────────────────────────────────────
+
     story.append(Paragraph("Customer Details", styles["SectionHeader"]))
     customer = quote.get("customer", {})
 
@@ -1216,9 +1286,12 @@ def generate_pdf(quote: dict) -> str:
     else:
         story.append(Paragraph("No customer details available", styles["Normal"]))
 
-    story.append(Spacer(1, 25))
+    story.append(Spacer(1, 15))
 
-    # Quote Lines
+    # ───────────────────────────────────────────────────────────────
+    #               QUOTE LINES
+    # ───────────────────────────────────────────────────────────────
+
     story.append(Paragraph("Quote Lines", styles["SectionHeader"]))
     line_items = quote.get("selected_lines", [])
     line_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]]
@@ -1250,7 +1323,7 @@ def generate_pdf(quote: dict) -> str:
     story.append(line_table)
 
     if once_off_lines:
-        story.append(Spacer(1, 15))
+        story.append(Spacer(1, 5))
         story.append(Paragraph("Once-Off Charges", styles["SectionHeader"]))
         once_off_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]] + once_off_lines
         once_table = Table(once_off_data, colWidths=[280, 60, 80, 80])
@@ -1267,9 +1340,12 @@ def generate_pdf(quote: dict) -> str:
         ]))
         story.append(once_table)
 
-    story.append(Spacer(1, 30))
+    story.append(Spacer(1, 25))
 
-    # Savings Summary Box
+    # ───────────────────────────────────────────────────────────────
+    #               SAVINGS SUMMARY
+    # ───────────────────────────────────────────────────────────────
+
     current = quote.get("current_spend_ex", 0.0)
     proposed = quote.get("new_monthly_ex", 0.0)
     saving = quote.get("monthly_saving_ex", 0.0)
@@ -1300,14 +1376,20 @@ def generate_pdf(quote: dict) -> str:
     ]))
     story.append(savings_table)
 
-    story.append(Spacer(1, 40))
+    story.append(Spacer(1, 20))
     story.append(Paragraph("Valid for 30 days from issue date", styles["Normal"]))
     story.append(Spacer(1, 6))
     story.append(Paragraph("Terms & Conditions apply • NBN availability subject to NBNCO assessment", styles["Normal"]))
 
+    # Optional small footer
+    story.append(Spacer(1, 15))
+    story.append(Paragraph(
+        "Belar Systems Pty Ltd • ABN 60 651 937 030",
+        styles["FooterSmall"]
+    ))
+
     doc.build(story)
     return pdf_path
-
 # ==================== ENDPOINTS ====================
 @app.post("/analyze-bill", response_model=QuoteResponse)
 async def analyze_bill(
