@@ -1143,6 +1143,247 @@ def chunk_text(text: str, max_chars: int = 18000) -> List[str]:
     return chunks
 
 # ==================== PDF GENERATOR - Matches React Preview Exactly ====================
+# def generate_pdf(quote: dict) -> str:
+#     pdf_path = os.path.join(TEMP_DIR, f"{quote['id']}.pdf")
+    
+#     doc = SimpleDocTemplate(
+#         pdf_path,
+#         pagesize=A4,
+#         leftMargin=20 * mm,
+#         rightMargin=20 * mm,
+#         topMargin=20 * mm,
+#         bottomMargin=20 * mm
+#     )
+    
+#     styles = getSampleStyleSheet()
+    
+#     # Custom styles
+#     styles.add(ParagraphStyle(
+#         name="TitleBig",
+#         fontSize=26,
+#         leading=32,
+#         alignment=TA_CENTER,
+#         spaceAfter=8,
+#         textColor=colors.HexColor("#111111")
+#     ))
+#     styles.add(ParagraphStyle(
+#         name="CompanyABN",
+#         fontSize=13,
+#         alignment=TA_CENTER,
+#         textColor=colors.HexColor("#444444"),
+#         spaceAfter=18
+#     ))
+#     styles.add(ParagraphStyle(
+#         name="Subtitle",
+#         fontSize=13,
+#         textColor=colors.HexColor("#666666"),
+#         alignment=TA_CENTER,
+#         spaceAfter=30
+#     ))
+#     styles.add(ParagraphStyle(
+#         name="SectionHeader",
+#         fontSize=16,
+#         fontName="Helvetica-Bold",
+#         spaceBefore=25,
+#         spaceAfter=12,
+#         textColor=colors.HexColor("#111111")
+#     ))
+#     styles.add(ParagraphStyle(
+#         name="FooterSmall",
+#         fontSize=9,
+#         textColor=colors.HexColor("#777777"),
+#         alignment=TA_CENTER,
+#         spaceBefore=40
+#     ))
+
+#     story = []
+
+
+#     logo_path = "./belar.jpg"          # ← UPDATE THIS PATH
+    
+
+#     if os.path.exists(logo_path):
+#         try:
+#             # Adjust width/height to fit your logo's aspect ratio
+#             logo = RLImage(logo_path, width=80, height=60)
+#             logo.hAlign = 'CENTER'
+#             story.append(logo)
+#             story.append(Spacer(1, 5))
+#         except Exception as e:
+#             # Silent fallback if image fails to load
+#             pass
+
+#     # Company name (prominent)
+#     story.append(Paragraph("Quote Fast", styles["TitleBig"]))
+    
+#     # ABN line
+#     story.append(Paragraph("ABN 60 651 937 030", styles["CompanyABN"]))
+
+#     story.append(Spacer(1, 3))
+
+#     # Quote type subtitle
+#     customer_type = quote.get("customer", {}).get("type", "Business")
+#     subtitle_text = "Business Solution" if customer_type == "Business" else "Residential Solution"
+#     story.append(Paragraph(subtitle_text, styles["Subtitle"]))
+    
+#     story.append(Spacer(1, 3))
+
+#     # ───────────────────────────────────────────────────────────────
+#     #               CUSTOMER DETAILS
+#     # ───────────────────────────────────────────────────────────────
+
+#     story.append(Paragraph("Customer Details", styles["SectionHeader"]))
+#     customer = quote.get("customer", {})
+
+#     def get_val(keys):
+#         if not isinstance(keys, list):
+#             keys = [keys]
+#         for key in keys:
+#             val = customer.get(key)
+#             if not val or str(val).strip().lower() in ["not provided", "n/a", "null", ""]:
+#                 continue
+#             if isinstance(val, dict):
+#                 parts = [val.get(k) for k in ["street", "line1", "suburb", "city", "state", "postcode", "zip"] if val.get(k)]
+#                 if parts:
+#                     return ", ".join(parts)
+#                 return str(val)
+#             return str(val).strip()
+#         return "N/A"
+
+#     cust_rows = []
+#     for label, key_list in [
+#         ("Company", ["company", "company_name"]),
+#         ("ABN", ["abn", "acn"]),
+#         ("Site Address", ["site_address", "address"]),
+#         ("Billing Address", ["billing_address"]),
+#         ("Contact", ["main_contact_name", "contact_name", "billing_contact_name"]),
+#         ("Email", ["main_contact_email", "email", "billing_contact_email"]),
+#         ("Phone", ["main_contact_number", "main_contact_phone", "phone", "billing_contact_number"]),
+#     ]:
+#         val = get_val(key_list)
+#         if val != "N/A":
+#             cust_rows.append([label, val])
+
+#     if cust_rows:
+#         cust_table = Table(cust_rows, colWidths=[120, 360])
+#         cust_table.setStyle(TableStyle([
+#             ('FONTSIZE', (0,0), (-1,-1), 10),
+#             ('LEFTPADDING', (0,0), (0,-1), 0),
+#             ('LEFTPADDING', (1,0), (1,-1), 10),
+#             ('VALIGN', (0,0), (-1,-1), 'TOP'),
+#             ('TEXTCOLOR', (0,0), (0,-1), colors.HexColor("#666666")),
+#             ('TEXTCOLOR', (1,0), (1,-1), colors.HexColor("#111111")),
+#             ('FONTNAME', (1,0), (1,-1), 'Helvetica-Bold'),
+#         ]))
+#         story.append(cust_table)
+#     else:
+#         story.append(Paragraph("No customer details available", styles["Normal"]))
+
+#     story.append(Spacer(1, 15))
+
+#     # ───────────────────────────────────────────────────────────────
+#     #               QUOTE LINES
+#     # ───────────────────────────────────────────────────────────────
+
+#     story.append(Paragraph("Quote Lines", styles["SectionHeader"]))
+#     line_items = quote.get("selected_lines", [])
+#     line_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]]
+#     once_off_lines = []
+
+#     for line in line_items:
+#         qty = line.get("qty", 1)
+#         unit_ex = line.get("unit_ex", 0.0)
+#         total = qty * unit_ex
+#         desc = line.get("desc", "Service")
+#         row = [desc, str(qty), f"${unit_ex:.2f}", f"${total:.2f}"]
+#         if line.get("cadence", "monthly").lower() == "monthly":
+#             line_data.append(row)
+#         else:
+#             once_off_lines.append(row)
+
+#     line_table = Table(line_data, colWidths=[280, 60, 80, 80])
+#     line_table.setStyle(TableStyle([
+#         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f3f4f6")),
+#         ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#666666")),
+#         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+#         ('FONTSIZE', (0,0), (-1,-1), 10),
+#         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+#         ('ALIGN', (1,1), (-1,-1), 'RIGHT'),
+#         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+#         ('LEFTPADDING', (0,1), (0,-1), 8),
+#         ('RIGHTPADDING', (0,1), (-1,-1), 8),
+#     ]))
+#     story.append(line_table)
+
+#     if once_off_lines:
+#         story.append(Spacer(1, 5))
+#         story.append(Paragraph("Once-Off Charges", styles["SectionHeader"]))
+#         once_off_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]] + once_off_lines
+#         once_table = Table(once_off_data, colWidths=[280, 60, 80, 80])
+#         once_table.setStyle(TableStyle([
+#             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f3f4f6")),
+#             ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#666666")),
+#             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+#             ('FONTSIZE', (0,0), (-1,-1), 10),
+#             ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+#             ('ALIGN', (1,1), (-1,-1), 'RIGHT'),
+#             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+#             ('LEFTPADDING', (0,1), (0,-1), 8),
+#             ('RIGHTPADDING', (0,1), (-1,-1), 8),
+#         ]))
+#         story.append(once_table)
+
+#     story.append(Spacer(1, 25))
+
+#     # ───────────────────────────────────────────────────────────────
+#     #               SAVINGS SUMMARY
+#     # ───────────────────────────────────────────────────────────────
+
+#     current = quote.get("current_spend_ex", 0.0)
+#     proposed = quote.get("new_monthly_ex", 0.0)
+#     saving = quote.get("monthly_saving_ex", 0.0)
+
+#     savings_data = [
+#         ["Current monthly spend:", f"${current:.2f}"],
+#         ["New monthly recurring:", f"${proposed:.2f}"],
+#         ["", ""],
+#         ["Monthly saving:", f"${saving:.2f}"],
+#         ["24-month saving:", f"${saving * 24:.2f}"],
+#     ]
+
+#     savings_table = Table(savings_data, colWidths=[320, 160])
+#     savings_table.setStyle(TableStyle([
+#         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f0fdf4")),
+#         ('BOX', (0,0), (-1,-1), 1.5, colors.HexColor("#86efac")),
+#         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#bbf7d0")),
+#         ('FONTSIZE', (0,0), (-1,-1), 12),
+#         ('LEFTPADDING', (0,0), (-1,-1), 20),
+#         ('RIGHTPADDING', (0,0), (-1,-1), 20),
+#         ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+#         ('FONTNAME', (0,3), (0,4), 'Helvetica-Bold'),
+#         ('FONTNAME', (1,3), (1,4), 'Helvetica-Bold'),
+#         ('TEXTCOLOR', (0,3), (1,4), colors.HexColor("#166534")),
+#         ('FONTSIZE', (1,3), (1,4), 13),
+#         ('LINEABOVE', (0,3), (-1,3), 1, colors.HexColor("#86efac")),
+#         ('SPAN', (0,2), (-1,2)),
+#     ]))
+#     story.append(savings_table)
+
+#     story.append(Spacer(1, 20))
+#     story.append(Paragraph("Valid for 30 days from issue date", styles["Normal"]))
+#     story.append(Spacer(1, 6))
+#     story.append(Paragraph("Terms & Conditions apply • NBN availability subject to NBNCO assessment", styles["Normal"]))
+
+#     # Optional small footer
+#     story.append(Spacer(1, 15))
+#     story.append(Paragraph(
+#         "Belar Systems Pty Ltd • ABN 60 651 937 030",
+#         styles["FooterSmall"]
+#     ))
+
+#     doc.build(story)
+#     return pdf_path
+
 def generate_pdf(quote: dict) -> str:
     pdf_path = os.path.join(TEMP_DIR, f"{quote['id']}.pdf")
     
@@ -1157,7 +1398,7 @@ def generate_pdf(quote: dict) -> str:
     
     styles = getSampleStyleSheet()
     
-    # Custom styles
+    # Custom styles (keeping your original ones)
     styles.add(ParagraphStyle(
         name="TitleBig",
         fontSize=26,
@@ -1198,47 +1439,31 @@ def generate_pdf(quote: dict) -> str:
 
     story = []
 
-    # ───────────────────────────────────────────────────────────────
-    #               COMPANY BRANDING HEADER
-    # ───────────────────────────────────────────────────────────────
-
-    # === Logo (change path to your actual logo file) ===
-    # Recommended: transparent PNG, ~180–220 px wide
-    logo_path = "./belar.jpg"          # ← UPDATE THIS PATH
-    # Alternative examples:
-    # logo_path = "/app/assets/belar-logo.png"
-    # logo_path = os.path.join(os.path.dirname(__file__), "belar_logo.png")
-
+    # Logo (update path if needed)
+    logo_path = "./belar.jpg"
     if os.path.exists(logo_path):
         try:
-            # Adjust width/height to fit your logo's aspect ratio
             logo = RLImage(logo_path, width=80, height=60)
             logo.hAlign = 'CENTER'
             story.append(logo)
             story.append(Spacer(1, 5))
-        except Exception as e:
-            # Silent fallback if image fails to load
+        except Exception:
             pass
 
-    # Company name (prominent)
+    # Company name & ABN
     story.append(Paragraph("Quote Fast", styles["TitleBig"]))
-    
-    # ABN line
     story.append(Paragraph("ABN 60 651 937 030", styles["CompanyABN"]))
-
     story.append(Spacer(1, 3))
 
     # Quote type subtitle
     customer_type = quote.get("customer", {}).get("type", "Business")
     subtitle_text = "Business Solution" if customer_type == "Business" else "Residential Solution"
     story.append(Paragraph(subtitle_text, styles["Subtitle"]))
-    
     story.append(Spacer(1, 3))
 
     # ───────────────────────────────────────────────────────────────
     #               CUSTOMER DETAILS
     # ───────────────────────────────────────────────────────────────
-
     story.append(Paragraph("Customer Details", styles["SectionHeader"]))
     customer = quote.get("customer", {})
 
@@ -1289,44 +1514,59 @@ def generate_pdf(quote: dict) -> str:
     story.append(Spacer(1, 15))
 
     # ───────────────────────────────────────────────────────────────
-    #               QUOTE LINES
+    #               QUOTE LINES  ← FIXED CALCULATION HERE
     # ───────────────────────────────────────────────────────────────
-
     story.append(Paragraph("Quote Lines", styles["SectionHeader"]))
+
     line_items = quote.get("selected_lines", [])
-    line_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]]
+    
+    # Calculate totals properly
+    monthly_lines = []
     once_off_lines = []
+    monthly_total_ex = 0.0
+    once_off_total_ex = 0.0
 
     for line in line_items:
-        qty = line.get("qty", 1)
-        unit_ex = line.get("unit_ex", 0.0)
-        total = qty * unit_ex
+        qty = int(line.get("qty", 1))
+        unit_ex = float(line.get("unit_ex", 0.0))
+        total_ex = qty * unit_ex
         desc = line.get("desc", "Service")
-        row = [desc, str(qty), f"${unit_ex:.2f}", f"${total:.2f}"]
-        if line.get("cadence", "monthly").lower() == "monthly":
-            line_data.append(row)
+        cadence = line.get("cadence", "monthly").lower()
+
+        row = [desc, str(qty), f"${unit_ex:.2f}", f"${total_ex:.2f}"]
+
+        if cadence == "monthly":
+            monthly_lines.append(row)
+            monthly_total_ex += total_ex
         else:
             once_off_lines.append(row)
+            once_off_total_ex += total_ex
 
-    line_table = Table(line_data, colWidths=[280, 60, 80, 80])
-    line_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f3f4f6")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#666666")),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
-        ('ALIGN', (1,1), (-1,-1), 'RIGHT'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('LEFTPADDING', (0,1), (0,-1), 8),
-        ('RIGHTPADDING', (0,1), (-1,-1), 8),
-    ]))
-    story.append(line_table)
+    # Monthly recurring table
+    if monthly_lines:
+        line_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]] + monthly_lines
+        line_table = Table(line_data, colWidths=[280, 60, 80, 80])
+        line_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f3f4f6")),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#666666")),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 10),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e5e7eb")),
+            ('ALIGN', (1,1), (-1,-1), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LEFTPADDING', (0,1), (0,-1), 8),
+            ('RIGHTPADDING', (0,1), (-1,-1), 8),
+        ]))
+        story.append(line_table)
+    else:
+        story.append(Paragraph("No monthly recurring services selected.", styles["Normal"]))
 
+    # Once-off charges (only show if present)
     if once_off_lines:
-        story.append(Spacer(1, 5))
+        story.append(Spacer(1, 12))
         story.append(Paragraph("Once-Off Charges", styles["SectionHeader"]))
-        once_off_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]] + once_off_lines
-        once_table = Table(once_off_data, colWidths=[280, 60, 80, 80])
+        once_data = [["Description", "Qty", "Unit (ex-GST)", "Total"]] + once_off_lines
+        once_table = Table(once_data, colWidths=[280, 60, 80, 80])
         once_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f3f4f6")),
             ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#666666")),
@@ -1343,12 +1583,11 @@ def generate_pdf(quote: dict) -> str:
     story.append(Spacer(1, 25))
 
     # ───────────────────────────────────────────────────────────────
-    #               SAVINGS SUMMARY
+    #               SAVINGS SUMMARY  ← using freshly calculated value
     # ───────────────────────────────────────────────────────────────
-
     current = quote.get("current_spend_ex", 0.0)
-    proposed = quote.get("new_monthly_ex", 0.0)
-    saving = quote.get("monthly_saving_ex", 0.0)
+    proposed = monthly_total_ex   # This is the key fix
+    saving = current - proposed
 
     savings_data = [
         ["Current monthly spend:", f"${current:.2f}"],
@@ -1381,7 +1620,6 @@ def generate_pdf(quote: dict) -> str:
     story.append(Spacer(1, 6))
     story.append(Paragraph("Terms & Conditions apply • NBN availability subject to NBNCO assessment", styles["Normal"]))
 
-    # Optional small footer
     story.append(Spacer(1, 15))
     story.append(Paragraph(
         "Belar Systems Pty Ltd • ABN 60 651 937 030",
@@ -1809,71 +2047,13 @@ async def get_csv(quote_id: str):
         media_type="text/csv",
         filename=f"QuoteFull_{quote_id[:8].upper()}.csv"
     )
-# @app.post("/send-email/{quote_id}")
-# async def send_email(quote_id: str, to_email: str = Form(...)):
-#     quote = await quotes_collection.find_one({"_id": quote_id})
-#     if not quote:
-#         raise HTTPException(404)
-#     quote["id"] = quote_id  # For PDF
-#     # Generate email content with Grok
-#     messages = [{"role": "system", "content": EMAIL_PROMPT}]
-#     messages.append({"role": "user", "content": json.dumps(quote)})
-#     try:
-#         response = client.chat.completions.create(
-#             model="grok-3-latest",
-#             messages=messages,
-#             response_format={"type": "json_object"},
-#             max_tokens=1000,
-#         )
-#         email_content = json.loads(response.choices[0].message.content)
-#         subject = email_content["subject"]
-#         body = email_content["body"]
-#     except Exception as e:
-#         raise HTTPException(500, f"Grok email generation failed: {str(e)}") from e
-#     pdf_path = generate_pdf(quote)
-#     msg = MIMEMultipart()
-#     msg["From"] = FROM_EMAIL
-#     msg["To"] = to_email
-#     msg["Subject"] = subject
-#     msg.attach(MIMEText(body, "plain"))
-#     with open(pdf_path, "rb") as f:
-#         attach = MIMEApplication(f.read(), _subtype="pdf")
-#         attach.add_header("Content-Disposition", "attachment", filename=f"Quote_{quote_id[:8].upper()}.pdf")
-#         msg.attach(attach)
-#     if os.path.exists(TCS_PDF_PATH):
-#         with open(TCS_PDF_PATH, "rb") as f:
-#             attach = MIMEApplication(f.read(), _subtype="pdf")
-#             attach.add_header("Content-Disposition", "attachment", filename="Standard_TCs.pdf")
-#             msg.attach(attach)
-#     try:
-#         with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
-#             server.starttls()
-#             server.login(SMTP_USER, SMTP_PASS)
-#             server.send_message(msg)
-#     except Exception as e:
-#         raise HTTPException(500, f"Email sending failed: {str(e)}") from e
-#     await quotes_collection.update_one({"_id": quote_id}, {"$set": {"status": "Sent"}})
-#     return {"message": "Email sent successfully"}
+
 @app.post("/send-email/{quote_id}")
 async def send_email(quote_id: str, to_email: str = Form(...)):
     quote = await quotes_collection.find_one({"_id": quote_id})
     if not quote:
         raise HTTPException(404, "Quote not found")
-    # Prepare minimal customer info for personalization
-    # cust = quote.get("raw_grok_output", {})
-    # print(cust)
-    # print(cust)
-    # customer = cust.get("customer_info", {})
-    # print("abc",customer)
-    # contact_name = (
-    #     customer.get("main_contact_name")
-    #     or customer.get("contact_name")
-    #     or customer.get("billing_contact_name")
-    #     or "Valued Customer"
-    # )
-    # company = customer.get("company") or customer.get("company_name") or ""
-
-    # Fixed short subject and body
+   
     subject = f"Your Telco Quote #{quote_id[:8].upper()}"
     body = f"""Hi,
 Please find your personalised telco quote attached.
